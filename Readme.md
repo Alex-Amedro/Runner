@@ -2,8 +2,7 @@
 
 Autonomous obstacle avoidance in cluttered environments, trained with reinforcement learning.
 
-<!-- HERO GIF: forest flythrough, dense obstacles, ~5-6s loop -->
-<!-- ![hero](assets/hero.gif) -->
+![hero](assets/hero.gif)
 
 ## Results
 
@@ -17,8 +16,7 @@ Average distance flown before failure, 100 episodes per configuration
 | medium | TBD |
 | high | TBD |
 
-<!-- Optional: LiDAR visualization GIF near this section -->
-<!-- ![lidar](assets/lidar.gif) -->
+![lidar](assets/lidar.gif)
 
 ## Environment
 
