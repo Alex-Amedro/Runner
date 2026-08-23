@@ -2,3 +2,6 @@ src/__pycache__/
 src/logs_drone/
 src/modeles/
 venv/
+src/retrain.py
+src/mesure_distance.py
+src/TF.py

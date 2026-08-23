@@ -20,7 +20,7 @@ from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import SubprocVecEnv, VecNormalize
 import numpy as np
 
-from test2 import SpeedrunnerEnv
+from environment import SpeedrunnerEnv
 
 
 # --- LE RADAR (identique à train.py) ---
@@ -229,8 +229,7 @@ def main():
     if args.frame_stack > 1:
         print(f"🧩 Frame stacking : {args.frame_stack} trames, empilées DANS "
               f"SpeedrunnerEnv (pas via VecFrameStack -- bug connu avec le "
-              f"replay buffer de SAC en fin d'épisode, cf commentaire dans "
-              f"test2.py). VecNormalize voit déjà des observations à "
+              f"replay buffer de SAC en fin d'épisode). VecNormalize voit déjà des observations à "
               f"{141 * args.frame_stack} dims.")
 
     if args.continue_from is not None:

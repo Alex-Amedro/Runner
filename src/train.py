@@ -9,7 +9,7 @@ from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import SubprocVecEnv, VecNormalize
 
 # Le bon environnement physique V2
-from test2 import SpeedrunnerEnv
+from environment import SpeedrunnerEnv
 
 
 def linear_schedule(valeur_initiale, valeur_finale):

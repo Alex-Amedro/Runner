@@ -4,7 +4,7 @@ import numpy as np
 from stable_baselines3 import PPO, SAC
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 
-from test2 import SpeedrunnerEnv, angles_lidar
+from environment import SpeedrunnerEnv, angles_lidar
 
 
 def charger_modele_et_env(chemin_modele, chemin_vecnorm, densite_arbres, longueur_piste,

@@ -13,7 +13,7 @@ Usage :
 import argparse
 import numpy as np
 
-from test2 import SpeedrunnerEnv
+from environment import SpeedrunnerEnv
 
 
 def verifier_observation(obs, nb_steps, episode_idx, anomalies):

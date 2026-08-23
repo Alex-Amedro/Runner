@@ -25,7 +25,7 @@ import numpy as np
 from stable_baselines3 import SAC
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 
-from test2 import SpeedrunnerEnv
+from environment import SpeedrunnerEnv
 
 DENSITES_STANDARD = (0.0, 0.2, 0.35, 0.5)
 # Dossiers fouillés par défaut, en plus du dossier courant. La recherche est
