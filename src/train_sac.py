@@ -1,15 +1,3 @@
-"""
-Entraînement SAC -- même environnement, même reward, même physique que
-train.py (PPO). Seul l'algorithme change.
-
-Pourquoi : après 11 runs PPO, le plafond observé (20-40% de succès avec
-obstacles, alors que le vol pur sans obstacle atteint 97-100%) suggère que
-le goulot d'étranglement est la prise de décision face aux obstacles, pas
-le vol de base. Un papier trouvé plus tôt dans le projet (Kalidas et al.,
-comparant DQN/PPO/SAC sur de l'évitement d'obstacles en drone) trouve SAC
-nettement meilleur que PPO sur cette famille de tâche précise.
-"""
-
 import argparse
 import os
 import re
@@ -23,7 +11,6 @@ import numpy as np
 from environment import SpeedrunnerEnv
 
 
-# --- LE RADAR (identique à train.py) ---
 class MetricsCallback(BaseCallback):
     def __init__(self, verbose=0):
         super().__init__(verbose)
@@ -236,11 +223,6 @@ def main():
         print(f"🧠 Reprise SAC depuis {args.continue_from}")
         model = SAC.load(args.continue_from, env=vec_env, tensorboard_log=chemin_tensorboard)
 
-        # NOUVEAU : recharge le replay buffer s'il existe. Sans ça, SAC
-        # repart avec une mémoire d'expérience vide à chaque reprise -- les
-        # poids sont bons mais les mises à jour redeviennent efficaces
-        # seulement une fois le buffer reconstitué, d'où le temps plus long
-        # pour retrouver le même niveau de performance qu'avant la reprise.
         chemin_buffer = args.continue_from.replace(".zip", "_buffer.pkl")
         if os.path.exists(chemin_buffer):
             model.load_replay_buffer(chemin_buffer)
@@ -254,13 +236,13 @@ def main():
             vec_env,
             verbose=1,
             learning_rate=3e-4,
-            buffer_size=300_000,   # taille du replay buffer -- SAC est off-policy
-            batch_size=256,        # plus grand que PPO, classique pour SAC
-            tau=0.005,             # vitesse de mise à jour des réseaux cibles
+            buffer_size=300_000,
+            batch_size=256,
+            tau=0.005,
             gamma=0.99,
-            train_freq=1,          # entraîne à chaque step
+            train_freq=1,
             gradient_steps=1,
-            ent_coef="auto",       # SAC ajuste automatiquement l'exploration -- pas de std à régler à la main
+            ent_coef="auto",
             policy_kwargs=dict(net_arch=dict(pi=[128, 128], qf=[128, 128])),
             tensorboard_log=chemin_tensorboard,
         )
@@ -279,7 +261,7 @@ def main():
     model_path = f"./modeles/drone_{args.run_id}_final"
     model.save(model_path)
     vec_env.save(f"{model_path}_vecnorm.pkl")
-    model.save_replay_buffer(f"{model_path}_buffer")  # NOUVEAU : pour permettre une vraie reprise
+    model.save_replay_buffer(f"{model_path}_buffer")
     print(f"✅ Modèle sauvegardé : {model_path}.zip (+ buffer, + vecnorm)")
 
 

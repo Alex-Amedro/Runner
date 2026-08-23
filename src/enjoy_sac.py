@@ -1,18 +1,4 @@
-"""
-enjoy_sac.py — Boîte à outils de test pour les checkpoints SAC du drone speedrunner.
-
-Aucun modèle n'est codé en dur : les chemins sont résolus dynamiquement.
-On peut désigner un checkpoint par son chemin complet, par un fragment de nom
-("sac12"), ou ne rien préciser du tout (le plus avancé est pris).
-
-    python enjoy_sac.py lister
-    python enjoy_sac.py balayage --run sac12 --episodes 30
-    python enjoy_sac.py regarder --run sac12 --densite 0.35
-    python enjoy_sac.py comparer --run sac12 --contre sac9 --episodes 30
-
-Importable aussi :
-    from enjoy_sac import charger, jouer_episode, evaluer, balayage_densites, comparer_modeles
-"""
+# Parameters: choose the command, checkpoint, density, episode count, and search root below.
 
 import argparse
 import inspect
@@ -28,14 +14,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 from environment import SpeedrunnerEnv
 
 DENSITES_STANDARD = (0.0, 0.2, 0.35, 0.5)
-# Dossiers fouillés par défaut, en plus du dossier courant. La recherche est
-# récursive, donc un checkpoint rangé dans un sous-dossier est trouvé aussi.
 RACINES = (".", "modeles", "models", "checkpoints", "logs", "runs")
-
-
-# --------------------------------------------------------------------------
-# 0. Résolution des chemins de checkpoints
-# --------------------------------------------------------------------------
 
 def _racines(racine=None):
     if racine:
@@ -44,7 +23,6 @@ def _racines(racine=None):
 
 
 def lister_checkpoints(racine=None):
-    """Tous les .zip trouvés récursivement, du plus récent au plus ancien, sans doublon."""
     vus, trouves = set(), []
     for base in _racines(racine):
         for chemin in base.rglob("*.zip"):
@@ -56,17 +34,11 @@ def lister_checkpoints(racine=None):
 
 
 def _steps_du_nom(nom):
-    """Extrait le nombre de steps d'un nom de checkpoint, pour trier proprement."""
     m = re.search(r"(\d+)_steps", nom)
     return int(m.group(1)) if m else -1
 
 
 def resoudre_modele(motif=None, racine=None):
-    """Trouve un checkpoint à partir d'un chemin, d'un fragment de nom, ou de rien.
-
-    Le tri se fait par nombre de steps, pas alphabétiquement : sinon
-    "..._500000_steps" passerait avant "..._1000000_steps".
-    """
     if motif and Path(motif).is_file():
         return Path(motif)
 
@@ -78,8 +50,6 @@ def resoudre_modele(motif=None, racine=None):
         )
 
     if motif:
-        # Correspondance souple mais pas laxiste : "sac1" ne doit PAS matcher "sac12",
-        # d'où le \D (ou fin de chaîne) exigé juste après le motif.
         motif_strict = re.compile(rf"{re.escape(motif)}(\D|$)", re.IGNORECASE)
         filtres = [c for c in candidats if motif_strict.search(c.name)]
         if not filtres:
@@ -89,19 +59,10 @@ def resoudre_modele(motif=None, racine=None):
             raise FileNotFoundError(f"Rien ne correspond à '{motif}'. Trouvés :\n  {dispo}")
         candidats = filtres
 
-    # Le plus avancé en steps ; à égalité (ou sans steps dans le nom), le plus récent.
     return max(candidats, key=lambda p: (_steps_du_nom(p.name), p.stat().st_mtime))
 
 
 def resoudre_vecnorm(chemin_modele, racine=None):
-    """Trouve le .pkl de normalisation qui va avec un checkpoint donné.
-
-    Les deux fichiers ne suivent pas la même convention de nommage
-    ("..._500000_steps.zip" contre "..._vecnormalize_500000_steps.pkl"), donc
-    on apparie sur le préfixe de run ET le nombre de steps, pas sur le nom brut.
-    Charger le vecnorm d'un autre run fausserait toutes les observations en
-    silence, sans lever d'erreur — d'où la vérification stricte.
-    """
     chemin_modele = Path(chemin_modele)
     tige = chemin_modele.stem
     steps = _steps_du_nom(tige)
@@ -143,20 +104,12 @@ def resoudre_vecnorm(chemin_modele, racine=None):
     return meilleur
 
 
-# --------------------------------------------------------------------------
-# 1. Construction de l'environnement
-# --------------------------------------------------------------------------
-
 def _kwargs_compatibles(cls, **souhaits):
-    """Ne garde que les arguments réellement acceptés par le constructeur.
-    Évite de casser si la signature de SpeedrunnerEnv a bougé entre deux runs."""
     params = inspect.signature(cls.__init__).parameters
     return {k: v for k, v in souhaits.items() if k in params}
 
 
 def construire_env(densite=0.2, longueur=300.0, largeur=10.0, render=False):
-    """Environnement figé sur UNE config précise (densité et longueur non aléatoires),
-    pour que le chiffre mesuré veuille dire quelque chose."""
     souhaits = dict(
         densite_arbres_range=(densite, densite),
         longueur_piste_range=(longueur, longueur),
@@ -170,8 +123,6 @@ def construire_env(densite=0.2, longueur=300.0, largeur=10.0, render=False):
 
 def charger(modele=None, vecnorm=None, densite=0.2, longueur=300.0,
             largeur=10.0, render=False, racine=None, verbeux=True):
-    """Charge modèle + normalisation figée. `modele` et `vecnorm` acceptent un chemin,
-    un fragment de nom, ou None (auto). Retourne (model, vec_env)."""
     chemin_modele = resoudre_modele(modele, racine)
     chemin_vecnorm = Path(vecnorm) if vecnorm and Path(vecnorm).is_file() \
         else resoudre_vecnorm(chemin_modele, racine)
@@ -183,25 +134,18 @@ def charger(modele=None, vecnorm=None, densite=0.2, longueur=300.0,
     vec = DummyVecEnv([lambda: construire_env(densite, longueur, largeur, render)])
     if chemin_vecnorm:
         vec = VecNormalize.load(str(chemin_vecnorm), vec)
-        vec.training = False      # les stats ne bougent plus
-        vec.norm_reward = False   # reward brute, lisible
+        vec.training = False
+        vec.norm_reward = False
     model = SAC.load(str(chemin_modele), env=vec, device="auto")
     return model, vec
 
 
 def _env_brut(vec):
-    """Accès à l'env MuJoCo sous les couches VecNormalize / DummyVecEnv."""
     base = vec.venv.envs[0] if isinstance(vec, VecNormalize) else vec.envs[0]
     return getattr(base, "unwrapped", base)
 
 
-# --------------------------------------------------------------------------
-# 2. Lecture d'état
-# --------------------------------------------------------------------------
-
 def posture_deg(env):
-    """(roll, pitch, yaw) en degrés depuis le quaternion.
-    C'est ce qui révèle le banking soutenu (roll -40°/-70°, pitch +30°/+58° sur sac9)."""
     try:
         w, x, y, z = np.asarray(env.data.qpos[3:7], dtype=float)
         roll = np.arctan2(2 * (w * x + y * z), 1 - 2 * (x * x + y * y))
@@ -226,12 +170,7 @@ def _extraire(info, *cles, defaut=None):
     return defaut
 
 
-# --------------------------------------------------------------------------
-# 3. Un épisode
-# --------------------------------------------------------------------------
-
 def jouer_episode(model, vec, render=False, delai=0.02, deterministic=True, seed=None):
-    """Joue UN épisode complet. Retourne un dict de métriques."""
     if seed is not None:
         vec.seed(seed)
     obs = vec.reset()
@@ -279,20 +218,13 @@ def jouer_episode(model, vec, render=False, delai=0.02, deterministic=True, seed
         "roll_abs_max": float(np.nanmax(np.abs(rolls))),
         "pitch_moy": float(np.nanmean(pitches)),
         "pitch_abs_max": float(np.nanmax(np.abs(pitches))),
-        # part du temps en posture engagée : marge de manœuvre déjà consommée
         "temps_incline_30": float(np.mean((np.abs(rolls) > 30) | (np.abs(pitches) > 30))),
     }
 
 
-# --------------------------------------------------------------------------
-# 4. N épisodes → chiffres agrégés
-# --------------------------------------------------------------------------
-
 def evaluer(model=None, vec=None, episodes=30, densite=0.2, longueur=300.0,
             modele=None, vecnorm=None, racine=None,
             seed_depart=0, verbeux=True, deterministic=True):
-    """Évalue une densité sur N épisodes. Seeds fixes (seed_depart + i) pour que
-    deux modèles soient comparés sur exactement les mêmes forêts."""
     ferme = False
     if model is None or vec is None:
         model, vec = charger(modele, vecnorm, densite=densite, longueur=longueur,
@@ -340,7 +272,6 @@ def evaluer(model=None, vec=None, episodes=30, densite=0.2, longueur=300.0,
 def balayage_densites(modele=None, vecnorm=None, densites=DENSITES_STANDARD,
                       episodes=30, longueur=300.0, seed_depart=0,
                       racine=None, nom=None):
-    """Test principal : une ligne par densité, format prêt à coller dans EXPERIMENTS.md."""
     chemin = resoudre_modele(modele, racine)
     nom = nom or chemin.stem
 
@@ -365,7 +296,6 @@ def balayage_densites(modele=None, vecnorm=None, densites=DENSITES_STANDARD,
 
 def comparer_modeles(runs, densites=DENSITES_STANDARD, episodes=30,
                      seed_depart=0, racine=None):
-    """runs : liste de motifs/chemins, ou dict {nom: motif}. Mêmes seeds pour tous."""
     if not isinstance(runs, dict):
         runs = {str(r): r for r in runs}
 
@@ -383,7 +313,6 @@ def comparer_modeles(runs, densites=DENSITES_STANDARD, episodes=30,
 
 def visualiser(modele=None, vecnorm=None, densite=0.35, episodes=3,
                longueur=300.0, delai=0.02, deterministic=True, racine=None):
-    """Regarder voler, sans boucle infinie : N épisodes puis stop."""
     model, vec = charger(modele, vecnorm, densite=densite, longueur=longueur,
                          render=True, racine=racine)
     try:
@@ -398,10 +327,6 @@ def visualiser(modele=None, vecnorm=None, densite=0.35, episodes=3,
     finally:
         vec.close()
 
-
-# --------------------------------------------------------------------------
-# 5. CLI
-# --------------------------------------------------------------------------
 
 def main():
     p = argparse.ArgumentParser(description="Test des checkpoints SAC du drone speedrunner")

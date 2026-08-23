@@ -1,14 +1,4 @@
-"""
-Script de vérification de santé de l'environnement -- fait tourner N steps
-(avec un modèle entraîné si fourni, sinon des actions aléatoires) et vérifie
-que toutes les valeurs restent dans des plages attendues. Objectif : attraper
-des bugs comme le LiDAR non plafonné (repéré manuellement sur sac8_cap_v2)
-systématiquement, au lieu de tomber dessus par hasard en lisant un log.
-
-Usage :
-    python check_env.py --episodes 5 --steps-max 500
-    python check_env.py --modele ./modeles/drone_sac8_cap_v2_final.zip --vecnorm ./modeles/drone_sac8_cap_v2_final_vecnorm.pkl --algo sac --densite 0.0 --longueur 300 --episodes 3
-"""
+# Parameters: configure the model, environment, episode count, and step limit below.
 
 import argparse
 import numpy as np
@@ -17,7 +7,6 @@ from environment import SpeedrunnerEnv
 
 
 def verifier_observation(obs, nb_steps, episode_idx, anomalies):
-    """Vérifie qu'une observation brute (non normalisée par VecNormalize) est saine."""
     altitude = obs[0]
     vel_lin = obs[1:4]
     vel_ang = obs[4:7]
@@ -29,36 +18,29 @@ def verifier_observation(obs, nb_steps, episode_idx, anomalies):
     def signaler(message):
         anomalies.append(f"[ép.{episode_idx} step {nb_steps}] {message}")
 
-    # NaN / Inf n'importe où -- toujours une vraie anomalie, jamais normal
     if not np.all(np.isfinite(obs)):
         signaler("NaN ou Inf détecté dans l'observation")
 
-    # LiDAR : doit TOUJOURS être dans [0, 1] par construction (0=collé, 1=rien vu)
     if np.any(rayons < -1e-6) or np.any(rayons > 1.0 + 1e-6):
         pires = rayons[(rayons < -1e-6) | (rayons > 1.0 + 1e-6)]
         signaler(f"LiDAR hors de [0,1] : {pires[:5]} (c'est le bug qu'on vient de corriger -- "
                  f"si ça réapparaît, le fix n'a pas pris)")
 
-    # Quaternion : doit être unitaire (norme ~1) pour représenter une vraie rotation
     norme_quat = np.linalg.norm(quat)
     if abs(norme_quat - 1.0) > 0.01:
         signaler(f"Quaternion non-unitaire : norme={norme_quat:.4f} (devrait être 1.0)")
 
-    # Altitude : négative = sous le sol, physiquement impossible sauf bug
     if altitude < -0.5:
         signaler(f"Altitude négative suspecte : {altitude:.3f}")
     if altitude > 8.5:
         signaler(f"Altitude au-delà du plafond de mort (8.0) sans avoir terminé : {altitude:.3f}")
 
-    # Distance restante : ~1.0 au départ, ~0.0 à l'arrivée, un peu de marge tolérée
     if distance_restante < -0.2 or distance_restante > 1.2:
         signaler(f"distance_restante hors plage raisonnable : {distance_restante:.3f}")
 
-    # Position latérale : au-delà de ±1.5 c'est déjà largement hors piste
     if abs(position_laterale) > 1.5:
         signaler(f"position_laterale extrême : {position_laterale:.3f}")
 
-    # Vitesses : pas de valeur absurde (explosion numérique)
     if np.any(np.abs(vel_lin) > 200) or np.any(np.abs(vel_ang) > 200):
         signaler(f"Vitesse extrême : vel_lin={vel_lin}, vel_ang={vel_ang}")
 
@@ -72,11 +54,6 @@ def verifier_reward(reward, nb_steps, episode_idx, anomalies):
 
 
 def _obs_et_reward_brutes(vec_env):
-    """Retrouve get_original_obs()/get_original_reward() même si vec_env est
-    un VecFrameStack qui enveloppe un VecNormalize (VecFrameStack n'a pas ces
-    méthodes lui-même). Le VecNormalize sous-jacent travaille sur l'obs à UNE
-    trame (141 dims) même quand un VecFrameStack empile plusieurs trames
-    par-dessus -- donc verifier_observation() n'a rien à changer."""
     e = vec_env
     while not hasattr(e, "get_original_obs"):
         if not hasattr(e, "venv"):
@@ -202,7 +179,6 @@ if __name__ == "__main__":
 
     if anomalies:
         print(f"⚠️  {len(anomalies)} anomalie(s) détectée(s) :\n")
-        # N'affiche pas les 500 lignes si ça spam -- un échantillon suffit à diagnostiquer
         for a in anomalies[:30]:
             print(f"  {a}")
         if len(anomalies) > 30:

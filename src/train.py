@@ -8,26 +8,16 @@ from stable_baselines3.common.callbacks import BaseCallback, CheckpointCallback,
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import SubprocVecEnv, VecNormalize
 
-# Le bon environnement physique V2
+# Parameters: configure training ranges, checkpoint, run ID, and training steps below.
 from environment import SpeedrunnerEnv
 
 
 def linear_schedule(valeur_initiale, valeur_finale):
-    """
-    Schedule linéaire pour le learning_rate : décroît de valeur_initiale
-    à valeur_finale au fil de l'entraînement. SB3 appelle cette fonction
-    avec progress_remaining qui va de 1.0 (début) à 0.0 (fin).
-    Remplace target_kl : au lieu de couper les mises à jour trop grandes
-    après coup, on réduit la taille des pas progressivement, ce qui
-    correspond à la vraie cause du problème (approx_kl qui grimpe quand
-    la politique se resserre, à learning_rate fixe).
-    """
     def schedule(progress_remaining):
         return valeur_finale + progress_remaining * (valeur_initiale - valeur_finale)
     return schedule
 
 
-# --- LE RADAR (Distance + Taux de Victoire) ---
 class MetricsCallback(BaseCallback):
     def __init__(self, verbose=0):
         super().__init__(verbose)
@@ -60,11 +50,6 @@ class MetricsCallback(BaseCallback):
             self.distances_finales = []
             self.successes = []
 
-# --- RANDOMISATION DE DOMAINE (remplace le CURRICULUM séquentiel figé) ---
-# Cf découverte : le curriculum étape par étape entraînait un oubli
-# catastrophique (0% de succès en couloir vide après entraînement intensif
-# avec obstacles). Chaque episode tire maintenant sa propre config dans ces
-# plages, donc l'agent voit un mélange de difficultés en permanence.
 
 def main():
     parser = argparse.ArgumentParser()
@@ -128,15 +113,9 @@ def main():
     vec_env = make_vec_env(make_env, n_envs=args.n_envs, vec_env_cls=SubprocVecEnv)
     os.makedirs("./modeles/", exist_ok=True)
 
-    # 🆕 LE DOSSIER TENSORBOARD EST MAINTENANT UNIQUE POUR CHAQUE RUN-ID
     chemin_tensorboard = f"./logs_drone/run_{args.run_id}/"
 
-    # Gestion de la normalisation
     if args.continue_from is not None:
-        # Deux conventions de nommage possibles selon d'où vient le checkpoint :
-        # 1) Sauvegarde finale manuelle : "..._final.zip" -> "..._final_vecnorm.pkl"
-        # 2) CheckpointCallback(save_vecnormalize=True) : "..._701760_steps.zip"
-        #    -> "..._vecnormalize_701760_steps.pkl" (insertion, pas suffixe)
         candidat_final = args.continue_from.replace(".zip", "_vecnorm.pkl")
         candidat_checkpoint = re.sub(r"_(\d+)_steps\.zip$", r"_vecnormalize_\1_steps.pkl", args.continue_from)
 
@@ -151,9 +130,6 @@ def main():
             vec_env = VecNormalize.load(prev_vecnorm, vec_env)
             print(f"Stats de normalisation reprises depuis {prev_vecnorm}")
         else:
-            # AVANT : ce cas passait presque inaperçu et repartait sur des stats
-            # neuves, ce qui a corrompu un run entier (KL qui explose direct).
-            # Maintenant ça s'arrête, sauf si tu confirmes explicitement.
             print("🚨 ATTENTION : aucun fichier vecnormalize trouvé pour ce checkpoint.")
             print(f"   Cherché : {candidat_final}")
             print(f"   Cherché : {candidat_checkpoint}")
@@ -166,11 +142,8 @@ def main():
     else:
         vec_env = VecNormalize(vec_env, norm_obs=True, norm_reward=True)
 
-    # Chargement ou création du Cerveau
     if args.continue_from is not None:
         print(f"🧠 Reprise de l'entraînement depuis {args.continue_from}")
-        # learning_rate forcé via custom_objects : sinon la reprise garde
-        # l'ancien schedule sauvegardé dans le modèle.
         model = PPO.load(
             args.continue_from,
             env=vec_env,
@@ -183,17 +156,11 @@ def main():
             "MlpPolicy",
             vec_env,
             verbose=1,
-            # NOUVEAU : schedule décroissant (3e-4 -> 1e-5) à la place de
-            # target_kl. Remplace le pansement (couper les mises à jour
-            # trop grandes après coup) par le vrai traitement (des pas
-            # plus petits à mesure que la politique se resserre).
             learning_rate=linear_schedule(3e-4, 1e-5),
             n_steps=512,
             batch_size=64,
-            # NOUVEAU : réseau 128x128 (policy ET value), comme Swift.
-            # On tournait sur le défaut SB3 (plus petit), jamais comparé.
             policy_kwargs=dict(net_arch=dict(pi=[128, 128], vf=[128, 128])),
-            tensorboard_log=chemin_tensorboard, # Isolation ici
+            tensorboard_log=chemin_tensorboard, 
         )
 
     frequence_sauvegarde = max(10000, args.timesteps // 5)
@@ -201,24 +168,13 @@ def main():
         save_freq=frequence_sauvegarde // args.n_envs,
         save_path="./modeles/",
         name_prefix=f"drone_run{args.run_id}",
-        save_vecnormalize=True,  # NOUVEAU : sauvegarde les stats VecNormalize
-                                  # avec CHAQUE checkpoint, pas juste à la fin.
-                                  # Sans ça, tes checkpoints intermédiaires sont
-                                  # inutilisables (mauvaises stats de normalisation).
+        save_vecnormalize=True,
     )
 
     callback_list = CallbackList([checkpoint_callback, MetricsCallback()])
 
     print(f"🚀 Lancement sur {args.n_envs} cœurs...")
 
-    # NOUVEAU : reset_num_timesteps=True TOUJOURS, même en reprise.
-    # Avant : en reprise, SB3 calcule le budget du schedule de LR comme
-    # (steps déjà accumulés + args.timesteps), donc le schedule ne repart
-    # jamais de 3e-4 -- il continue de décroître sur TOUTE l'historique
-    # cumulée, et arrive déjà proche du plancher (1e-5) après plusieurs
-    # reprises, même quand on introduit un truc tout neuf (les murs).
-    # Ici, chaque lancement de train.py obtient son propre cycle complet
-    # 3e-4 -> 1e-5 sur le --timesteps demandé, peu importe l'historique.
     model.learn(
         total_timesteps=args.timesteps,
         callback=callback_list,
@@ -226,7 +182,6 @@ def main():
         tb_log_name="domain_rand"
     )
 
-    # 🆕 SAUVEGARDE FINALE AVEC RUN-ID
     model_path = f"./modeles/drone_run{args.run_id}_final"
     model.save(model_path)
     vec_env.save(f"{model_path}_vecnorm.pkl")
