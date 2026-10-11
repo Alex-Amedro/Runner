@@ -11,10 +11,10 @@ Average distance flown before failure, 100 episodes per configuration
 
 | Obstacle density | Average distance before failure |
 |---|---|
-| none | TBD |
-| low | TBD |
-| medium | TBD |
-| high | TBD |
+| none | Infinite |
+| low | 982m |
+| medium | 714 |
+| high | 488 |
 
 ![lidar](assets/lidar.gif)
 
